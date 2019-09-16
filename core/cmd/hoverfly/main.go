@@ -22,8 +22,8 @@ package main
 import (
 	"bufio"
 	"crypto/tls"
-	"flag"
 	"fmt"
+	"github.com/namsral/flag"
 	"os"
 	"strings"
 	"time"
@@ -104,10 +104,17 @@ var (
 	logsFormat = flag.String("logs", "plaintext", "Specify format for logs, options are \"plaintext\" and \"json\"")
 	logsSize   = flag.Int("logs-size", 1000, "Set the amount of logs to be stored in memory")
 
-	journalSize   = flag.Int("journal-size", 1000, "Set the size of request/response journal")
-	cacheSize     = flag.Int("cache-size", 1000, "Set the size of request/response cache")
-	cors          = flag.Bool("cors", false, "Enable CORS support")
-	noImportCheck = flag.Bool("no-import-check", false, "Skip duplicate request check when importing simulations")
+	journalSize         = flag.Int("journal-size", 1000, "Set the size of request/response journal")
+	cacheSize           = flag.Int("cache-size", 1000, "Set the size of request/response cache")
+	cors                = flag.Bool("cors", false, "Enable CORS support")
+	noImportCheck       = flag.Bool("no-import-check", false, "Skip duplicate request check when importing simulations")
+	destdbhost          = flag.String("destinationdb-host", "localhost", "Destination database host")
+	destdbport          = flag.String("destinationdb-port", "3306", "Destination database port")
+	destdbuser          = flag.String("destinationdb-user", "", "Destination database user")
+	destdbpass          = flag.String("destinationdb-password", "", "Destinatin database password")
+	binlogexecutable    = flag.String("binlog-executable", "", "executable location for binlog command")
+	mysqlexecutable     = flag.String("mysql-executable", "", "executable location for mysql command")
+	mysqldumpexecutable = flag.String("mysqldump-executable", "", "executable location for mysqldump command")
 
 	clientAuthenticationDestination = flag.String("client-authentication-destination", "", "Regular expression of destination with client authentication")
 	clientAuthenticationClientCert  = flag.String("client-authentication-client-cert", "", "Path to the client certification file used for authentication")
@@ -378,7 +385,7 @@ func main() {
 		requestCache, err = cache.NewLRUCache(cfg.CacheSize)
 		if err != nil {
 			log.WithFields(log.Fields{
-				"error":    err.Error(),
+				"error":      err.Error(),
 				"cache-size": cfg.CacheSize,
 			}).Fatal("Failed to create cache")
 		}
@@ -484,6 +491,73 @@ func main() {
 			"error": err.Error(),
 		}).Fatal("Failed to start proxy")
 	}
+
+	if *binlogexecutable != "" {
+		cfg.BinlogCommand = *binlogexecutable
+
+		if *destdbhost != "" {
+			cfg.BinlogCommand = *binlogexecutable + " -h" + *destdbhost
+		}
+
+		if *destdbport != "" {
+			cfg.BinlogCommand = cfg.BinlogCommand + " -P" + *destdbport
+		}
+
+		if *destdbuser != "" {
+			cfg.BinlogCommand = cfg.BinlogCommand + " -u" + *destdbuser
+		}
+
+		if *destdbpass != "" {
+			cfg.BinlogCommand = cfg.BinlogCommand + " -p" + *destdbpass
+		}
+	}
+	fmt.Println(cfg.BinlogCommand)
+
+	if *mysqlexecutable != "" {
+		cfg.MysqlCommand = *mysqlexecutable
+
+		if *destdbhost != "" {
+			cfg.MysqlCommand = cfg.MysqlCommand + " -h" + *destdbhost
+		}
+
+		if *destdbport != "" {
+			cfg.MysqlCommand = cfg.MysqlCommand + " -P" + *destdbport
+		}
+
+		if *destdbuser != "" {
+			cfg.MysqlCommand = cfg.MysqlCommand + " -u" + *destdbuser
+		}
+
+		if *destdbpass != "" {
+			cfg.MysqlCommand = cfg.MysqlCommand + " -p" + *destdbpass
+		}
+	}
+	fmt.Println(cfg.MysqlCommand)
+
+	if *mysqldumpexecutable != "" {
+		cfg.MysqldumpCommand = *mysqldumpexecutable
+
+		if *destdbhost != "" {
+			cfg.MysqldumpCommand = cfg.MysqldumpCommand + " -h" + *destdbhost
+		}
+
+		if *destdbport != "" {
+			cfg.MysqldumpCommand = cfg.MysqldumpCommand + " -P" + *destdbport
+		}
+
+		if *destdbuser != "" {
+			cfg.MysqldumpCommand = cfg.MysqldumpCommand + " -u" + *destdbuser
+		}
+
+		if *destdbpass != "" {
+			cfg.MysqldumpCommand = cfg.MysqldumpCommand + " -p" + *destdbpass
+		}
+
+		if mode == modes.Capture {
+			hoverfly.DumpDestinationDatabase()
+		}
+	}
+	fmt.Println(cfg.MysqldumpCommand)
 
 	// starting admin interface, this is blocking
 	adminApi := hv.AdminApi{}

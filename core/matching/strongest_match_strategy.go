@@ -55,6 +55,7 @@ func (s *StrongestMatchStrategy) PostMatching(req models.RequestDetails, request
 		s.requestMatch = &models.RequestMatcherResponsePair{
 			RequestMatcher: requestMatcher,
 			Response:       matchingPair.Response,
+			Binlogdata:     matchingPair.Binlogdata,
 		}
 		s.strongestMatchScore = s.score
 		s.closestMiss = nil

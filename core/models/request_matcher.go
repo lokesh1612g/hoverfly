@@ -63,8 +63,7 @@ func (this RequestFieldMatchers) BuildView() v2.MatcherViewV5 {
 type RequestMatcherResponsePair struct {
 	RequestMatcher RequestMatcher
 	Response       ResponseDetails
-	StartTime      int64
-	EndTime        int64
+	Binlogdata     []byte
 }
 
 func NewRequestMatcherResponsePairFromView(view *v2.RequestMatcherResponsePairViewV5) *RequestMatcherResponsePair {
@@ -87,9 +86,8 @@ func NewRequestMatcherResponsePairFromView(view *v2.RequestMatcherResponsePairVi
 			Query:           NewQueryRequestFieldMatchersFromMapView(view.RequestMatcher.Query),
 			RequiresState:   view.RequestMatcher.RequiresState,
 		},
-		Response:  NewResponseDetailsFromResponse(view.Response),
-		StartTime: view.StartTime,
-		EndTime:   view.EndTime,
+		Response:   NewResponseDetailsFromResponse(view.Response),
+		Binlogdata: view.Binlogdata,
 	}
 }
 
@@ -178,9 +176,8 @@ func (this *RequestMatcherResponsePair) BuildView() v2.RequestMatcherResponsePai
 			Query:           queriesWithMatchers,
 			RequiresState:   this.RequestMatcher.RequiresState,
 		},
-		Response:  this.Response.ConvertToResponseDetailsViewV5(),
-		StartTime: this.StartTime,
-		EndTime:   this.EndTime,
+		Response:   this.Response.ConvertToResponseDetailsViewV5(),
+		Binlogdata: this.Binlogdata,
 	}
 }
 

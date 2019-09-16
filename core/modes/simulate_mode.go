@@ -9,8 +9,9 @@ import (
 )
 
 type HoverflySimulate interface {
-	GetResponse(models.RequestDetails) (*models.ResponseDetails, *errors.HoverflyError)
+	GetResponse(models.RequestDetails) (*models.RequestMatcherResponsePair, *errors.HoverflyError)
 	ApplyMiddleware(models.RequestResponsePair) (models.RequestResponsePair, error)
+	ApplyDatabaseChanges(binlogdata []byte) error
 }
 
 type SimulateMode struct {
@@ -47,7 +48,8 @@ func (this SimulateMode) Process(request *http.Request, details models.RequestDe
 		return ReturnErrorAndLog(request, matchingErr, &pair, "There was an error when matching", Simulate)
 	}
 
-	pair.Response = *response
+	pair.Response = response.Response
+	this.Hoverfly.ApplyDatabaseChanges(response.Binlogdata)
 
 	if pair, err := this.Hoverfly.ApplyMiddleware(pair); err == nil {
 		return ReconstructResponse(request, pair), nil
