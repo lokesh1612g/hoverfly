@@ -12,7 +12,7 @@ import (
 )
 
 type HoverflySpy interface {
-	GetResponse(models.RequestDetails) (*models.ResponseDetails, *errors.HoverflyError)
+	GetResponse(models.RequestDetails) (*models.RequestMatcherResponsePair, *errors.HoverflyError)
 	ApplyMiddleware(models.RequestResponsePair) (models.RequestResponsePair, error)
 	DoRequest(*http.Request) (*http.Response, error)
 }
@@ -62,7 +62,7 @@ func (this SpyMode) Process(request *http.Request, details models.RequestDetails
 		}
 	}
 
-	pair.Response = *response
+	pair.Response = response.Response
 
 	if pair, err := this.Hoverfly.ApplyMiddleware(pair); err == nil {
 		return ReconstructResponse(request, pair), nil
