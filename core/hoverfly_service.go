@@ -92,15 +92,17 @@ func (this *Hoverfly) SetModeWithArguments(modeView v2.ModeView) error {
 	this.Cfg.SetMode(modeView.Mode)
 	if this.Cfg.GetMode() == "capture" {
 		this.CacheMatcher.FlushCache()
+		this.DumpDestinationDatabase()
 	} else if this.Cfg.GetMode() == "simulate" || this.Cfg.GetMode() == "spy" {
 		this.CacheMatcher.PreloadCache(*this.Simulation)
+		this.RestoreDestinationDatabase()
 	}
 
 	modeArguments := modes.ModeArguments{
-		Headers:          	modeView.Arguments.Headers,
-		MatchingStrategy: 	matchingStrategy,
-		Stateful:         	modeView.Arguments.Stateful,
-		OverwriteDuplicate:	modeView.Arguments.OverwriteDuplicate,
+		Headers:            modeView.Arguments.Headers,
+		MatchingStrategy:   matchingStrategy,
+		Stateful:           modeView.Arguments.Stateful,
+		OverwriteDuplicate: modeView.Arguments.OverwriteDuplicate,
 	}
 
 	this.modeMap[this.Cfg.GetMode()].SetArguments(modeArguments)
@@ -328,7 +330,6 @@ func (this Hoverfly) GetCORS() v2.CORSView {
 		ExposeHeaders:    cors.ExposeHeaders,
 	}
 }
-
 
 func (this *Hoverfly) GetState() map[string]string {
 	return this.state.State

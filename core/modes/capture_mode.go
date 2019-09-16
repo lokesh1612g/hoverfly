@@ -2,20 +2,22 @@ package modes
 
 import (
 	"bytes"
+	"fmt"
+	"github.com/SpectoLabs/hoverfly/core/models"
+	"github.com/SpectoLabs/hoverfly/core/util"
 	"io/ioutil"
 	"net/http"
 
-	"github.com/SpectoLabs/hoverfly/core/models"
-	"github.com/SpectoLabs/hoverfly/core/util"
-
-	log "github.com/sirupsen/logrus"
 	"github.com/SpectoLabs/hoverfly/core/handlers/v2"
+	log "github.com/sirupsen/logrus"
 )
 
 type HoverflyCapture interface {
 	ApplyMiddleware(models.RequestResponsePair) (models.RequestResponsePair, error)
 	DoRequest(*http.Request) (*http.Response, error)
-	Save(*models.RequestDetails, *models.ResponseDetails, *ModeArguments) error
+	SaveWithPosition(*models.RequestDetails, *models.ResponseDetails, []byte, *ModeArguments) error
+	CaptureDatabaseBinlogPosition() (string, string, error)
+	CaptureDatabaseChanges(startPos string, startfilename, stopPos string, stopfilename string) ([]byte, error)
 }
 
 type CaptureMode struct {
@@ -27,9 +29,9 @@ func (this *CaptureMode) View() v2.ModeView {
 	return v2.ModeView{
 		Mode: Capture,
 		Arguments: v2.ModeArgumentsView{
-			Headers:          	this.Arguments.Headers,
-			Stateful:         	this.Arguments.Stateful,
-			OverwriteDuplicate:	this.Arguments.OverwriteDuplicate,
+			Headers:            this.Arguments.Headers,
+			Stateful:           this.Arguments.Stateful,
+			OverwriteDuplicate: this.Arguments.OverwriteDuplicate,
 		},
 	}
 }
@@ -44,6 +46,8 @@ func (this *CaptureMode) GetArguments(arguments ModeArguments) {
 
 func (this CaptureMode) Process(request *http.Request, details models.RequestDetails) (*http.Response, error) {
 	// this is mainly for testing, since when you create
+	startPos, startfilename, _ := this.Hoverfly.CaptureDatabaseBinlogPosition()
+
 	if request.Body == nil {
 		request.Body = ioutil.NopCloser(bytes.NewBuffer([]byte("")))
 	}
@@ -76,8 +80,14 @@ func (this CaptureMode) Process(request *http.Request, details models.RequestDet
 		this.Arguments.Headers = []string{}
 	}
 
+	stopPos, stopfilename, _ := this.Hoverfly.CaptureDatabaseBinlogPosition()
+	binlogdata, err := this.Hoverfly.CaptureDatabaseChanges(startPos, startfilename, stopPos, stopfilename)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(binlogdata)
 	// saving response body with request/response meta to cache
-	err = this.Hoverfly.Save(&pair.Request, responseObj, &this.Arguments)
+	err = this.Hoverfly.SaveWithPosition(&pair.Request, responseObj, binlogdata, &this.Arguments)
 	if err != nil {
 		return ReturnErrorAndLog(request, err, &pair, "There was an error when saving request and response", Capture)
 	}

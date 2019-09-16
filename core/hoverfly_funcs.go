@@ -1,8 +1,12 @@
 package hoverfly
 
 import (
+	"bytes"
+	"fmt"
 	"github.com/aymerick/raymond"
 	"net/http"
+	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/SpectoLabs/hoverfly/core/errors"
@@ -41,9 +45,9 @@ func (hf *Hoverfly) DoRequest(request *http.Request) (*http.Response, error) {
 }
 
 // GetResponse returns stored response from cache
-func (hf *Hoverfly) GetResponse(requestDetails models.RequestDetails) (*models.ResponseDetails, *errors.HoverflyError) {
+func (hf *Hoverfly) GetResponse(requestDetails models.RequestDetails) (*models.RequestMatcherResponsePair, *errors.HoverflyError) {
 
-	var response models.ResponseDetails
+	var matchingPair models.RequestMatcherResponsePair
 	var cachedResponse *models.CachedResponse
 
 	cachedResponse, cacheErr := hf.CacheMatcher.GetCachedResponse(&requestDetails)
@@ -53,7 +57,7 @@ func (hf *Hoverfly) GetResponse(requestDetails models.RequestDetails) (*models.R
 		return nil, errors.MatchingFailedError(cachedResponse.ClosestMiss)
 		// If it's cached, use that response
 	} else if cacheErr == nil {
-		response = cachedResponse.MatchingPair.Response
+		matchingPair = *cachedResponse.MatchingPair
 		//If it's not cached, perform matching to find a hit
 	} else {
 		mode := (hf.modeMap[modes.Simulate]).(*modes.SimulateMode)
@@ -78,10 +82,11 @@ func (hf *Hoverfly) GetResponse(requestDetails models.RequestDetails) (*models.R
 
 			return nil, errors.MatchingFailedError(result.Error.ClosestMiss)
 		} else {
-			response = result.Pair.Response
+			matchingPair = *result.Pair
 		}
 	}
 
+	response := matchingPair.Response
 	// Templating applies at the end, once we have loaded a response. Comes BEFORE state transitions,
 	// as we use the current state in templates
 	if response.Templated == true {
@@ -111,7 +116,7 @@ func (hf *Hoverfly) GetResponse(requestDetails models.RequestDetails) (*models.R
 		hf.state.RemoveState(response.RemovesState)
 	}
 
-	return &response, nil
+	return &matchingPair, nil
 }
 
 func (hf *Hoverfly) applyBodyTemplating(requestDetails *models.RequestDetails, response *models.ResponseDetails, cachedResponse *models.CachedResponse) (string, error) {
@@ -153,7 +158,7 @@ func (hf *Hoverfly) applyHeadersTemplating(requestDetails *models.RequestDetails
 
 	var (
 		header []string
-		err error
+		err    error
 	)
 	headers := map[string][]string{}
 
@@ -175,6 +180,10 @@ func (hf *Hoverfly) applyHeadersTemplating(requestDetails *models.RequestDetails
 
 // save gets request fingerprint, extracts request body, status code and headers, then saves it to cache
 func (hf *Hoverfly) Save(request *models.RequestDetails, response *models.ResponseDetails, modeArgs *modes.ModeArguments) error {
+	return hf.SaveWithPosition(request, response, nil, modeArgs)
+}
+
+func (hf *Hoverfly) SaveWithPosition(request *models.RequestDetails, response *models.ResponseDetails, binlogdata []byte, modeArgs *modes.ModeArguments) error {
 	body := []models.RequestFieldMatchers{
 		{
 			Matcher: matchers.Exact,
@@ -270,7 +279,8 @@ func (hf *Hoverfly) Save(request *models.RequestDetails, response *models.Respon
 			Body:    body,
 			Headers: requestHeaders,
 		},
-		Response: *response,
+		Response:   *response,
+		Binlogdata: binlogdata,
 	}
 	if modeArgs.Stateful {
 		hf.Simulation.AddPairInSequence(&pair, hf.state)
@@ -283,10 +293,87 @@ func (hf *Hoverfly) Save(request *models.RequestDetails, response *models.Respon
 	return nil
 }
 
-func (this Hoverfly) ApplyMiddleware(pair models.RequestResponsePair) (models.RequestResponsePair, error) {
-	if this.Cfg.Middleware.IsSet() {
-		return this.Cfg.Middleware.Execute(pair)
+func (hf *Hoverfly) ApplyMiddleware(pair models.RequestResponsePair) (models.RequestResponsePair, error) {
+	if hf.Cfg.Middleware.IsSet() {
+		return hf.Cfg.Middleware.Execute(pair)
 	}
 
 	return pair, nil
+}
+
+func (hf *Hoverfly) CaptureDatabaseBinlogPosition() (string, string, error) {
+	if hf.Cfg.MysqlCommand == "" {
+		return "", "", nil
+	}
+
+	mysqlcmdparameters := strings.Split(hf.Cfg.MysqlCommand, " ")
+	cmd := mysqlcmdparameters[0]
+	prms := mysqlcmdparameters[1:]
+
+	var in bytes.Buffer
+	in.Write([]byte("SHOW MASTER STATUS"))
+
+	mysql := exec.Command(cmd, prms...)
+	mysql.Stderr = os.Stderr
+	mysql.Stdin = &in
+
+	mysqldata, errmysql := mysql.Output()
+	if errmysql != nil {
+		fmt.Println("Error connecting to database server")
+		return "", "", errmysql
+	}
+
+	binlogslice := strings.Fields(strings.Split(string(mysqldata), "\n")[1])
+
+	binlogfile := binlogslice[0]
+	binlogpos := binlogslice[1]
+
+	return binlogpos, binlogfile, nil
+}
+
+func (hf *Hoverfly) CaptureDatabaseChanges(startPos string, startfilename string, stopPos string, stopfilename string) ([]byte, error) {
+	if hf.Cfg.BinlogCommand == "" {
+		return nil, nil
+	}
+
+	binlogcmdparameters := strings.Split(hf.Cfg.BinlogCommand, " ")
+	binlogcmdparameters = append(binlogcmdparameters, "--read-from-remote-server")
+	binlogcmdparameters = append(binlogcmdparameters, "--start-position="+startPos)
+	binlogcmdparameters = append(binlogcmdparameters, "--stop-position="+stopPos)
+	binlogcmdparameters = append(binlogcmdparameters, startfilename)
+
+	cmd := binlogcmdparameters[0]
+	prms := binlogcmdparameters[1:]
+
+	binlog := exec.Command(cmd, prms...)
+	binlogdata, errbinlog := binlog.Output()
+	if errbinlog != nil {
+		fmt.Println("Error getting binlogdata")
+		return nil, errbinlog
+	}
+
+	return binlogdata, nil
+}
+
+func (hf *Hoverfly) ApplyDatabaseChanges(binlogdata []byte) error {
+	if hf.Cfg.MysqlCommand == "" {
+		return nil
+	}
+
+	mysqlcmdparameters := strings.Split(hf.Cfg.MysqlCommand, " ")
+
+	cmd := mysqlcmdparameters[0]
+	prms := mysqlcmdparameters[1:]
+
+	mysql := exec.Command(cmd, prms...)
+	cin, _ := mysql.StdinPipe()
+
+	errmysql := mysql.Start()
+	if errmysql != nil {
+		fmt.Println("Error writing binlogdata")
+		return errmysql
+	}
+
+	cin.Write(binlogdata)
+	return nil
 }

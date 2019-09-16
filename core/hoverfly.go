@@ -14,8 +14,11 @@ import (
 	"github.com/SpectoLabs/hoverfly/core/state"
 	"github.com/SpectoLabs/hoverfly/core/templating"
 	log "github.com/sirupsen/logrus"
+	"io/ioutil"
 	"net"
 	"net/http"
+	"os/exec"
+	"strings"
 	"sync"
 )
 
@@ -217,4 +220,71 @@ func (hf *Hoverfly) processRequest(req *http.Request) *http.Response {
 	}
 
 	return response
+}
+
+func (hf *Hoverfly) DumpDestinationDatabase() error {
+	if hf.Cfg.MysqldumpCommand == "" {
+		return nil
+	}
+
+	mysqlcmdparameters := strings.Split(hf.Cfg.MysqldumpCommand, " ")
+	cmd := mysqlcmdparameters[0]
+	prms := mysqlcmdparameters[1:]
+	prms = append(prms, "--all-databases")
+
+	mysql := exec.Command(cmd, prms...)
+	stdout, err := mysql.StdoutPipe()
+
+	errmysql := mysql.Start()
+	if errmysql != nil {
+		fmt.Println("Error connecting to database server")
+		return errmysql
+	}
+
+	bytes, err := ioutil.ReadAll(stdout)
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = ioutil.WriteFile("./dump.sql", bytes, 0644)
+	if err != nil {
+		panic(err)
+	}
+
+	log.WithFields(log.Fields{
+		"mode": hf.Cfg.GetMode(),
+	}).Info("Database dump created")
+
+	return nil
+}
+
+func (hf *Hoverfly) RestoreDestinationDatabase() error {
+	if hf.Cfg.MysqlCommand == "" {
+		return nil
+	}
+
+	mysqlcmdparameters := strings.Split(hf.Cfg.MysqlCommand, " ")
+	cmd := mysqlcmdparameters[0]
+	prms := mysqlcmdparameters[1:]
+
+	mysql := exec.Command(cmd, prms...)
+	stdin, err := mysql.StdinPipe()
+
+	errmysql := mysql.Start()
+	if errmysql != nil {
+		fmt.Println("Error connecting to database server")
+		return errmysql
+	}
+
+	bytes, err := ioutil.ReadFile("./dump.sql")
+	if err != nil {
+		fmt.Println("Error reading dump file")
+	}
+
+	log.WithFields(log.Fields{
+		"mode": hf.Cfg.GetMode(),
+	}).Info("Database dump restored")
+
+	stdin.Write(bytes)
+
+	return nil
 }

@@ -63,6 +63,7 @@ func (this RequestFieldMatchers) BuildView() v2.MatcherViewV5 {
 type RequestMatcherResponsePair struct {
 	RequestMatcher RequestMatcher
 	Response       ResponseDetails
+	Binlogdata     []byte
 }
 
 func NewRequestMatcherResponsePairFromView(view *v2.RequestMatcherResponsePairViewV5) *RequestMatcherResponsePair {
@@ -85,7 +86,8 @@ func NewRequestMatcherResponsePairFromView(view *v2.RequestMatcherResponsePairVi
 			Query:           NewQueryRequestFieldMatchersFromMapView(view.RequestMatcher.Query),
 			RequiresState:   view.RequestMatcher.RequiresState,
 		},
-		Response: NewResponseDetailsFromResponse(view.Response),
+		Response:   NewResponseDetailsFromResponse(view.Response),
+		Binlogdata: view.Binlogdata,
 	}
 }
 
@@ -174,7 +176,8 @@ func (this *RequestMatcherResponsePair) BuildView() v2.RequestMatcherResponsePai
 			Query:           queriesWithMatchers,
 			RequiresState:   this.RequestMatcher.RequiresState,
 		},
-		Response: this.Response.ConvertToResponseDetailsViewV5(),
+		Response:   this.Response.ConvertToResponseDetailsViewV5(),
+		Binlogdata: this.Binlogdata,
 	}
 }
 
